@@ -105,6 +105,32 @@ video,
   overflow-wrap: anywhere;
 }
 
+.telemetry {
+  border-bottom: 1px solid #edf1f3;
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.telemetry-row {
+  align-items: baseline;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(82px, 0.85fr) minmax(0, 1.15fr);
+}
+
+.telemetry-row span {
+  color: #66737d;
+  font-size: 12px;
+}
+
+.telemetry-row strong {
+  color: #1d252c;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .actions {
   display: grid;
   gap: 8px;
