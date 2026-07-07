@@ -1,6 +1,7 @@
 const MODEL_SIZE = 416;
 const CONF_THRESHOLD = 0.25;
 const IOU_THRESHOLD = 0.45;
+const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/";
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -10,25 +11,78 @@ const labelEl = document.getElementById("label");
 const confidenceEl = document.getElementById("confidence");
 const captureButton = document.getElementById("capture");
 const toggleButton = document.getElementById("toggleCamera");
+const loadModelButton = document.getElementById("loadModel");
+const autoScanButton = document.getElementById("autoScan");
+const debugEl = document.getElementById("debug");
 
 let facingMode = "environment";
 let model = null;
 let labels = [];
 let letterbox = { scale: 1, padX: 0, padY: 0, sourceWidth: 1, sourceHeight: 1 };
+let autoScanTimer = null;
+let loadingModel = false;
 
 captureButton.disabled = true;
+autoScanButton.disabled = true;
+
+function setStatus(message) {
+  statusEl.textContent = message;
+  debugEl.textContent = message;
+}
+
+function appendDebug(message) {
+  debugEl.textContent = `${debugEl.textContent}\n${message}`.trim();
+}
 
 async function loadLabels() {
-  const response = await fetch("labels.txt");
+  const response = await fetch("labels.txt", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`labels.txt failed: HTTP ${response.status}`);
+  }
   const text = await response.text();
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+function waitForRuntime() {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const timer = setInterval(() => {
+      if (window.tflite && typeof window.tflite.loadTFLiteModel === "function") {
+        clearInterval(timer);
+        resolve(window.tflite);
+        return;
+      }
+      if (performance.now() - started > 10000) {
+        clearInterval(timer);
+        reject(new Error("TFLite runtime did not load. Reload once or try Chrome."));
+      }
+    }, 100);
+  });
+}
+
 async function loadModel() {
-  labels = await loadLabels();
-  model = await tflite.loadTFLiteModel("model.tflite");
-  statusEl.textContent = "Model ready. Point the camera at an aircraft.";
-  captureButton.disabled = false;
+  if (model || loadingModel) {
+    return;
+  }
+  loadingModel = true;
+  loadModelButton.disabled = true;
+  setStatus("Loading labels and TFLite runtime...");
+  try {
+    labels = await loadLabels();
+    appendDebug(`labels loaded: ${labels.length}`);
+    const runtime = await waitForRuntime();
+    if (typeof runtime.setWasmPath === "function") {
+      runtime.setWasmPath(TFLITE_CDN);
+    }
+    setStatus("Downloading model.tflite...");
+    model = await runtime.loadTFLiteModel("model.tflite");
+    setStatus("Model ready. Press Run Scan.");
+    captureButton.disabled = false;
+    autoScanButton.disabled = false;
+  } finally {
+    loadingModel = false;
+    loadModelButton.disabled = Boolean(model);
+  }
 }
 
 async function startCamera() {
@@ -42,6 +96,7 @@ async function startCamera() {
     audio: false,
   });
   video.srcObject = stream;
+  setStatus(model ? "Camera ready. Press Run Scan." : "Camera ready. Press Load Model.");
 }
 
 function drawLetterboxedFrame() {
@@ -61,13 +116,7 @@ function drawLetterboxedFrame() {
 }
 
 function tensorFromCanvas() {
-  return tf.tidy(() => {
-    return tf.browser
-      .fromPixels(inputCanvas)
-      .toFloat()
-      .div(255)
-      .expandDims(0);
-  });
+  return tf.tidy(() => tf.browser.fromPixels(inputCanvas).toFloat().div(255).expandDims(0));
 }
 
 function toDetections(output) {
@@ -167,29 +216,43 @@ function drawDetections(detections) {
 }
 
 async function runInference() {
-  if (!model || video.readyState < 2) {
+  if (!model) {
+    setStatus("Model is not loaded yet. Press Load Model first.");
     return;
   }
-  statusEl.textContent = "Running inference...";
+  if (video.readyState < 2) {
+    setStatus("Camera is not ready yet.");
+    return;
+  }
+
+  setStatus("Running scan...");
   const started = performance.now();
   drawLetterboxedFrame();
   const input = tensorFromCanvas();
-  const output = model.predict(input);
-  const tensor = Array.isArray(output) ? output[0] : output;
-  const detections = toDetections(tensor);
-  input.dispose();
-  tensor.dispose();
-
-  drawDetections(detections);
-  const elapsed = performance.now() - started;
-  if (detections.length === 0) {
-    labelEl.textContent = "No aircraft detected";
-    confidenceEl.textContent = "-";
-  } else {
-    labelEl.textContent = detections[0].label;
-    confidenceEl.textContent = `${(detections[0].score * 100).toFixed(1)}%`;
+  let tensor = null;
+  try {
+    const output = model.predict(input);
+    tensor = Array.isArray(output) ? output[0] : output;
+    const detections = toDetections(tensor);
+    drawDetections(detections);
+    const elapsed = performance.now() - started;
+    if (detections.length === 0) {
+      labelEl.textContent = "No aircraft detected";
+      confidenceEl.textContent = "-";
+    } else {
+      labelEl.textContent = detections[0].label;
+      confidenceEl.textContent = `${(detections[0].score * 100).toFixed(1)}%`;
+    }
+    setStatus(`Done in ${elapsed.toFixed(0)} ms`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Scan failed: ${error.message || error}`);
+  } finally {
+    input.dispose();
+    if (tensor && typeof tensor.dispose === "function") {
+      tensor.dispose();
+    }
   }
-  statusEl.textContent = `Done in ${elapsed.toFixed(0)} ms`;
 }
 
 toggleButton.addEventListener("click", async () => {
@@ -199,11 +262,33 @@ toggleButton.addEventListener("click", async () => {
 
 captureButton.addEventListener("click", runInference);
 
-window.addEventListener("load", async () => {
+loadModelButton.addEventListener("click", async () => {
   try {
-    await Promise.all([loadModel(), startCamera()]);
+    await loadModel();
   } catch (error) {
     console.error(error);
-    statusEl.textContent = `Setup failed: ${error.message}`;
+    setStatus(`Model setup failed: ${error.message || error}`);
+  }
+});
+
+autoScanButton.addEventListener("click", () => {
+  if (autoScanTimer) {
+    clearInterval(autoScanTimer);
+    autoScanTimer = null;
+    autoScanButton.textContent = "Auto Scan";
+    setStatus("Auto scan stopped.");
+    return;
+  }
+  runInference();
+  autoScanTimer = setInterval(runInference, 1200);
+  autoScanButton.textContent = "Stop Auto";
+});
+
+window.addEventListener("load", async () => {
+  try {
+    await startCamera();
+  } catch (error) {
+    console.error(error);
+    setStatus(`Camera setup failed: ${error.message || error}`);
   }
 });

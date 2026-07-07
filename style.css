@@ -105,13 +105,33 @@ video,
   overflow-wrap: anywhere;
 }
 
-#capture {
+.actions {
+  display: grid;
+  gap: 8px;
   margin-top: 14px;
+}
+
+#capture,
+#loadModel,
+#autoScan {
   width: 100%;
 }
 
 #inputCanvas {
   display: none;
+}
+
+#debug {
+  background: #f1f5f7;
+  border-radius: 6px;
+  color: #3b4650;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 12px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 760px) {

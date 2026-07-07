@@ -40,12 +40,17 @@
             <span>Confidence</span>
             <strong id="confidence">-</strong>
           </div>
-          <button id="capture" type="button">Run Inference</button>
+          <div class="actions">
+            <button id="loadModel" type="button">Load Model</button>
+            <button id="capture" type="button">Run Scan</button>
+            <button id="autoScan" type="button">Auto Scan</button>
+          </div>
+          <pre id="debug"></pre>
         </aside>
       </section>
 
       <canvas id="inputCanvas" width="416" height="416"></canvas>
     </main>
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>
