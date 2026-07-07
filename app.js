@@ -1,7 +1,7 @@
 const MODEL_SIZE = 416;
 const CONF_THRESHOLD = 0.25;
 const IOU_THRESHOLD = 0.45;
-const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/";
+const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -13,6 +13,7 @@ const captureButton = document.getElementById("capture");
 const toggleButton = document.getElementById("toggleCamera");
 const loadModelButton = document.getElementById("loadModel");
 const autoScanButton = document.getElementById("autoScan");
+const copyDebugButton = document.getElementById("copyDebug");
 const debugEl = document.getElementById("debug");
 
 let facingMode = "environment";
@@ -33,6 +34,27 @@ function setStatus(message) {
 function appendDebug(message) {
   debugEl.textContent = `${debugEl.textContent}\n${message}`.trim();
 }
+
+function errorText(error) {
+  if (!error) {
+    return "unknown error";
+  }
+  if (error.stack) {
+    return error.stack;
+  }
+  if (error.message) {
+    return error.message;
+  }
+  return String(error);
+}
+
+window.addEventListener("error", (event) => {
+  appendDebug(`window error: ${event.message || "unknown"} at ${event.filename || ""}:${event.lineno || ""}`);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  appendDebug(`unhandled rejection: ${errorText(event.reason)}`);
+});
 
 async function loadLabels() {
   const response = await fetch("labels.txt", { cache: "no-store" });
@@ -68,14 +90,33 @@ async function loadModel() {
   loadModelButton.disabled = true;
   setStatus("Loading labels and TFLite runtime...");
   try {
+    appendDebug(`browser: ${navigator.userAgent}`);
+    appendDebug(`tf global: ${typeof window.tf}`);
+    appendDebug(`tflite global: ${typeof window.tflite}`);
     labels = await loadLabels();
     appendDebug(`labels loaded: ${labels.length}`);
     const runtime = await waitForRuntime();
+    appendDebug(`runtime keys: ${Object.keys(runtime).slice(0, 12).join(", ")}`);
     if (typeof runtime.setWasmPath === "function") {
       runtime.setWasmPath(TFLITE_CDN);
+      appendDebug(`wasm path: ${TFLITE_CDN}`);
     }
     setStatus("Downloading model.tflite...");
-    model = await runtime.loadTFLiteModel("model.tflite");
+    const modelResponse = await fetch("model.tflite", { method: "HEAD", cache: "no-store" });
+    appendDebug(`model HEAD: ${modelResponse.status} ${modelResponse.headers.get("content-length") || "unknown"} bytes`);
+    try {
+      model = await runtime.loadTFLiteModel("model.tflite?v=2");
+    } catch (directError) {
+      appendDebug(`direct model URL load failed: ${errorText(directError)}`);
+      appendDebug("trying blob URL fallback...");
+      const modelBody = await fetch("model.tflite?v=2", { cache: "no-store" });
+      if (!modelBody.ok) {
+        throw new Error(`model download failed: HTTP ${modelBody.status}`);
+      }
+      const blob = await modelBody.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      model = await runtime.loadTFLiteModel(blobUrl);
+    }
     setStatus("Model ready. Press Run Scan.");
     captureButton.disabled = false;
     autoScanButton.disabled = false;
@@ -268,6 +309,17 @@ loadModelButton.addEventListener("click", async () => {
   } catch (error) {
     console.error(error);
     setStatus(`Model setup failed: ${error.message || error}`);
+    appendDebug(errorText(error));
+  }
+});
+
+copyDebugButton.addEventListener("click", async () => {
+  const text = debugEl.textContent || "";
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Debug copied.");
+  } catch (_) {
+    window.prompt("Copy debug text", text);
   }
 });
 

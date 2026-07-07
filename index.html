@@ -6,7 +6,7 @@
     <title>GOATSOFAI Browser Inference</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/tf-tflite.min.js"></script>
   </head>
   <body>
     <main class="app">
@@ -44,6 +44,7 @@
             <button id="loadModel" type="button">Load Model</button>
             <button id="capture" type="button">Run Scan</button>
             <button id="autoScan" type="button">Auto Scan</button>
+            <button id="copyDebug" type="button">Copy Debug</button>
           </div>
           <pre id="debug"></pre>
         </aside>
@@ -51,6 +52,6 @@
 
       <canvas id="inputCanvas" width="416" height="416"></canvas>
     </main>
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>
