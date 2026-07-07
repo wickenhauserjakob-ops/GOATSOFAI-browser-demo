@@ -344,7 +344,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 async function loadLabels() {
-  const response = await fetch("labels.txt?v=6", { cache: "no-store" });
+  const response = await fetch("../labels.txt?v=6", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`labels.txt failed: HTTP ${response.status}`);
   }
@@ -398,21 +398,21 @@ async function loadModel() {
     }
     setStatus("Downloading model.tflite...");
     const headStarted = performance.now();
-    const modelResponse = await fetch("model.tflite?v=6", { method: "HEAD", cache: "no-store" });
+    const modelResponse = await fetch("../model.tflite?v=6", { method: "HEAD", cache: "no-store" });
     telemetry.modelHeadMs = performance.now() - headStarted;
     const contentLength = Number(modelResponse.headers.get("content-length"));
     telemetry.modelBytes = Number.isFinite(contentLength) ? contentLength : null;
     appendDebug(`model HEAD: ${modelResponse.status} ${modelResponse.headers.get("content-length") || "unknown"} bytes`);
     try {
       const directStarted = performance.now();
-      model = await runtime.loadTFLiteModel("model.tflite?v=6");
+      model = await runtime.loadTFLiteModel("../model.tflite?v=6");
       telemetry.modelLoadMs = performance.now() - directStarted;
       telemetry.modelLoadPath = "direct URL";
     } catch (directError) {
       appendDebug(`direct model URL load failed: ${errorText(directError)}`);
       appendDebug("trying blob URL fallback...");
       const blobStarted = performance.now();
-      const modelBody = await fetch("model.tflite?v=6", { cache: "no-store" });
+      const modelBody = await fetch("../model.tflite?v=6", { cache: "no-store" });
       if (!modelBody.ok) {
         throw new Error(`model download failed: HTTP ${modelBody.status}`);
       }

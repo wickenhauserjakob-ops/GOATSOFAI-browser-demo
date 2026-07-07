@@ -131,6 +131,26 @@ video,
   text-align: right;
 }
 
+.threshold-control {
+  border-bottom: 1px solid #edf1f3;
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.threshold-control span {
+  color: #66737d;
+  font-size: 12px;
+}
+
+.threshold-control strong {
+  font-size: 14px;
+}
+
+.threshold-control input {
+  width: 100%;
+}
+
 .actions {
   display: grid;
   gap: 8px;
