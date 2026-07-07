@@ -6,7 +6,7 @@ Open:
 https://wickenhauserjakob-ops.github.io/GOATSOFAI-browser-demo/
 
 Fresh telemetry build:
-https://wickenhauserjakob-ops.github.io/GOATSOFAI-browser-demo/telemetry-v7/
+https://wickenhauserjakob-ops.github.io/GOATSOFAI-browser-demo/telemetry-v8/
 
 The page reports model load time, model size, per-scan latency, average latency,
 estimated FPS, run count, camera resolution, browser/device hints, memory/tensor
@@ -22,3 +22,8 @@ Auto Scan now records every scan automatically into a browser-local session log.
 `Copy Report` includes the full log, and `Download Log` saves it as JSON.
 Because this is a static GitHub Pages site, it cannot send logs to Codex or a
 server by itself without a separate backend endpoint.
+
+The v8 build adds image upload. Use `Upload Image` to pick a local photo, then
+`Run Scan` to run the same model on the uploaded image. `Use Camera` returns to
+the live camera stream. Reports include whether each scan came from camera or an
+uploaded image.
