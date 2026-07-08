@@ -2,6 +2,7 @@ const MODEL_SIZE = 960;
 const DEFAULT_CONF_THRESHOLD = 0.25;
 const IOU_THRESHOLD = 0.45;
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
+const ASSET_VERSION = "v9";
 
 const video = document.getElementById("video");
 const uploadedImage = document.getElementById("uploadedImage");
@@ -54,11 +55,12 @@ let scanLog = [];
 let sourceMode = "camera";
 let uploadedImageUrl = null;
 let uploadedImageMeta = null;
+let debugLog = [];
 const LOG_STORAGE_KEY = "goatsofai-browser-scan-log-v1";
 const MAX_LOG_ENTRIES = 500;
 
 const telemetry = {
-  build: "telemetry-v8-2026-07-07",
+  build: "telemetry-v9-2026-07-08",
   startedAt: new Date().toISOString(),
   labelsLoadMs: null,
   runtimeWaitMs: null,
@@ -97,11 +99,15 @@ autoScanButton.disabled = true;
 
 function setStatus(message) {
   statusEl.textContent = message;
-  debugEl.textContent = message;
+  appendDebug(`status: ${message}`);
 }
 
 function appendDebug(message) {
-  debugEl.textContent = `${debugEl.textContent}\n${message}`.trim();
+  debugLog.push(`${new Date().toISOString()} ${message}`);
+  if (debugLog.length > 120) {
+    debugLog = debugLog.slice(-120);
+  }
+  debugEl.textContent = debugLog.join("\n");
 }
 
 function formatMs(value) {
@@ -298,11 +304,11 @@ function updateScanStats(totalMs, timings, analysis) {
   appendScanLog(totalMs, timings, analysis, false);
 }
 
-function markFailedRun() {
+function markFailedRun(error, timings) {
   telemetry.runs += 1;
   telemetry.failedRuns += 1;
   updateTelemetryDisplay();
-  appendScanLog(null, {}, null, true);
+  appendScanLog(null, timings || {}, null, true, error);
 }
 
 function loadScanLog() {
@@ -328,7 +334,7 @@ function saveScanLog() {
   }
 }
 
-function appendScanLog(totalMs, timings, analysis, failed) {
+function appendScanLog(totalMs, timings, analysis, failed, error) {
   const entry = {
     index: scanLog.length + 1,
     timestamp: new Date().toISOString(),
@@ -351,6 +357,7 @@ function appendScanLog(totalMs, timings, analysis, failed) {
     camera: telemetry.camera,
     battery: formatBattery(telemetry.latestBattery),
     memory: getMemoryInfo(),
+    error: error ? errorText(error) : null,
   };
   scanLog.push(entry);
   saveScanLog();
@@ -432,6 +439,7 @@ function buildReport() {
     top_raw_classes: telemetry.lastTopClasses,
     scan_log_entries: scanLog.length,
     scan_log: scanLog,
+    debug_log: debugLog,
     note: "Browser APIs do not expose real CPU/GPU wattage. Battery rate is only shown when the browser exposes Battery Status and the battery level changes while unplugged.",
   };
   return JSON.stringify(report, null, 2);
@@ -471,7 +479,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 async function loadLabels() {
-  const response = await fetch("labels.txt?v=8", { cache: "no-store" });
+  const response = await fetch(`labels.txt?${ASSET_VERSION}`, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`labels.txt failed: HTTP ${response.status}`);
   }
@@ -525,21 +533,21 @@ async function loadModel() {
     }
     setStatus("Downloading model.tflite...");
     const headStarted = performance.now();
-    const modelResponse = await fetch("model.tflite?v=8", { method: "HEAD", cache: "no-store" });
+    const modelResponse = await fetch(`model.tflite?${ASSET_VERSION}`, { method: "HEAD", cache: "no-store" });
     telemetry.modelHeadMs = performance.now() - headStarted;
     const contentLength = Number(modelResponse.headers.get("content-length"));
     telemetry.modelBytes = Number.isFinite(contentLength) ? contentLength : null;
     appendDebug(`model HEAD: ${modelResponse.status} ${modelResponse.headers.get("content-length") || "unknown"} bytes`);
     try {
       const directStarted = performance.now();
-      model = await runtime.loadTFLiteModel("model.tflite?v=8");
+      model = await runtime.loadTFLiteModel(`model.tflite?${ASSET_VERSION}`);
       telemetry.modelLoadMs = performance.now() - directStarted;
       telemetry.modelLoadPath = "direct URL";
     } catch (directError) {
       appendDebug(`direct model URL load failed: ${errorText(directError)}`);
       appendDebug("trying blob URL fallback...");
       const blobStarted = performance.now();
-      const modelBody = await fetch("model.tflite?v=8", { cache: "no-store" });
+      const modelBody = await fetch(`model.tflite?${ASSET_VERSION}`, { cache: "no-store" });
       if (!modelBody.ok) {
         throw new Error(`model download failed: HTTP ${modelBody.status}`);
       }
@@ -600,6 +608,10 @@ async function startCamera() {
 
 function drawLetterboxedFrame() {
   const ctx = inputCanvas.getContext("2d", { willReadFrequently: true });
+  if (inputCanvas.width !== MODEL_SIZE || inputCanvas.height !== MODEL_SIZE) {
+    inputCanvas.width = MODEL_SIZE;
+    inputCanvas.height = MODEL_SIZE;
+  }
   const source = getActiveSource();
   const sourceWidth = source.width;
   const sourceHeight = source.height;
@@ -802,7 +814,8 @@ async function runInference() {
     setStatus(`Done in ${elapsed.toFixed(0)} ms`);
   } catch (error) {
     console.error(error);
-    markFailedRun();
+    appendDebug(`scan failed: ${errorText(error)}`);
+    markFailedRun(error, timings);
     setStatus(`Scan failed: ${error.message || error}`);
   } finally {
     input.dispose();
