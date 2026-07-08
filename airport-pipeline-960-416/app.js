@@ -5,7 +5,9 @@ const VARIANT_CONF_THRESHOLD = 0.20;
 const IOU_THRESHOLD = 0.45;
 const CROP_EXPAND = 1.8;
 const MIN_CROP_SOURCE_PX = 416;
-const ASSET_VERSION = "v1";
+const VOTE_BURST_SIZE = 3;
+const VOTE_GAP_MS = 300;
+const ASSET_VERSION = "v2";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -54,7 +56,9 @@ let labels = [];
 let facingMode = "environment";
 let trackerLetterbox = { scale: 1, padX: 0, padY: 0, sourceWidth: 1, sourceHeight: 1 };
 let cropLetterbox = { scale: 1, padX: 0, padY: 0, cropWidth: 1, cropHeight: 1 };
-let autoScanTimer = null;
+let inferenceRunning = false;
+let voteBurstRunning = false;
+let voteBurstCancel = false;
 let loadingModel = false;
 let sourceMode = "camera";
 let uploadedImageUrl = null;
@@ -91,6 +95,7 @@ const telemetry = {
   lastA320Score: null,
   lastWatchScores: {},
   lastTopClasses: [],
+  lastVoteResult: null,
   camera: "",
 };
 
@@ -214,10 +219,9 @@ function setPreviewMode(mode) {
   if (mode === "upload") {
     video.style.display = "none";
     uploadedImage.style.display = "block";
-    if (autoScanTimer) {
-      clearInterval(autoScanTimer);
-      autoScanTimer = null;
-      autoScanButton.textContent = "Auto Scan";
+    if (voteBurstRunning) {
+      voteBurstCancel = true;
+      autoScanButton.textContent = "Vote Scan";
     }
     setStatus(trackerModel && variantModel ? "Image loaded. Press Run Scan." : "Image loaded. Press Load Model.");
     return;
@@ -332,7 +336,7 @@ function tensorFromCanvas(canvas) {
   return tf.tidy(() => tf.browser.fromPixels(canvas).toFloat().div(255).expandDims(0));
 }
 
-function decodeDetections(output, classLabels, threshold) {
+function decodeDetections(output, classLabels, threshold, coordSize) {
   const data = output.dataSync();
   const channels = output.shape[1];
   const anchors = output.shape[2];
@@ -351,10 +355,17 @@ function decodeDetections(output, classLabels, threshold) {
       if (score > classScores[c]) classScores[c] = score;
     }
     if (bestScore < threshold) continue;
-    const cx = data[a];
-    const cy = data[anchors + a];
-    const w = data[2 * anchors + a];
-    const h = data[3 * anchors + a];
+    let cx = data[a];
+    let cy = data[anchors + a];
+    let w = data[2 * anchors + a];
+    let h = data[3 * anchors + a];
+    const maxCoord = Math.max(Math.abs(cx), Math.abs(cy), Math.abs(w), Math.abs(h));
+    if (coordSize && maxCoord <= 4) {
+      cx *= coordSize;
+      cy *= coordSize;
+      w *= coordSize;
+      h *= coordSize;
+    }
     detections.push({
       classId: bestClass,
       label: classLabels[bestClass] || `class ${bestClass}`,
@@ -388,12 +399,18 @@ function nonMaxSuppression(detections) {
 
 function trackerBoxToSource(box) {
   const lb = trackerLetterbox;
-  return [
-    Math.max(0, (box[0] - lb.padX) / lb.scale),
-    Math.max(0, (box[1] - lb.padY) / lb.scale),
-    Math.min(lb.sourceWidth, (box[2] - lb.padX) / lb.scale),
-    Math.min(lb.sourceHeight, (box[3] - lb.padY) / lb.scale),
-  ];
+  const x1 = (box[0] - lb.padX) / lb.scale;
+  const y1 = (box[1] - lb.padY) / lb.scale;
+  const x2 = (box[2] - lb.padX) / lb.scale;
+  const y2 = (box[3] - lb.padY) / lb.scale;
+  const left = Math.max(0, Math.min(lb.sourceWidth, Math.min(x1, x2)));
+  const top = Math.max(0, Math.min(lb.sourceHeight, Math.min(y1, y2)));
+  const right = Math.max(0, Math.min(lb.sourceWidth, Math.max(x1, x2)));
+  const bottom = Math.max(0, Math.min(lb.sourceHeight, Math.max(y1, y2)));
+  if (right - left < 8 || bottom - top < 8) {
+    return [0, 0, lb.sourceWidth, lb.sourceHeight];
+  }
+  return [left, top, right, bottom];
 }
 
 function expandCrop(box, sourceWidth, sourceHeight) {
@@ -431,7 +448,7 @@ function drawCropFromOriginal(cropBox) {
 }
 
 function analyzeVariant(output) {
-  const decoded = decodeDetections(output, labels, VARIANT_CONF_THRESHOLD);
+  const decoded = decodeDetections(output, labels, VARIANT_CONF_THRESHOLD, VARIANT_SIZE);
   const detections = decoded.detections;
   const topClasses = decoded.classScores
     .map((score, classId) => ({ classId, label: labels[classId] || `class ${classId}`, score }))
@@ -477,15 +494,24 @@ function drawOverlay(trackerBox, variantDetection) {
   ctx.fillText(text, left + 6, Math.max(16, top - 7));
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runInference() {
+  if (inferenceRunning) {
+    appendDebug("scan skipped: previous scan still running");
+    return null;
+  }
   if (!trackerModel || !variantModel) {
     setStatus("Pipeline is not loaded yet. Press Load Model first.");
-    return;
+    return null;
   }
   if (sourceMode === "camera" && video.readyState < 2) {
     setStatus("Camera is not ready yet.");
-    return;
+    return null;
   }
+  inferenceRunning = true;
   const started = performance.now();
   const timings = {};
   let trackerInput = null;
@@ -502,7 +528,7 @@ async function runInference() {
     trackerInput = tensorFromCanvas(inputCanvas);
     const trackerOutput = trackerModel.predict(trackerInput);
     trackerOutputTensor = Array.isArray(trackerOutput) ? trackerOutput[0] : trackerOutput;
-    const trackerDecoded = decodeDetections(trackerOutputTensor, ["aircraft"], TRACKER_CONF_THRESHOLD);
+    const trackerDecoded = decodeDetections(trackerOutputTensor, ["aircraft"], TRACKER_CONF_THRESHOLD, TRACKER_SIZE);
     timings.trackerMs = performance.now() - mark;
     if (trackerDecoded.detections.length) {
       const rawSourceBox = trackerBoxToSource(trackerDecoded.detections[0].box);
@@ -568,6 +594,13 @@ async function runInference() {
       error: null,
     });
     setStatus(`Done in ${elapsed.toFixed(0)} ms`);
+    return {
+      failed: false,
+      label: telemetry.lastLabel,
+      confidence: telemetry.lastConfidence || 0,
+      elapsed,
+      trackerScore: telemetry.lastTrackerScore || 0,
+    };
   } catch (error) {
     console.error(error);
     telemetry.runs += 1;
@@ -575,11 +608,81 @@ async function runInference() {
     appendDebug(`pipeline failed: ${errorText(error)}`);
     appendScanLog({ failed: true, result: "pipeline failed", error: errorText(error), camera: telemetry.camera, memory: getMemoryInfo() });
     setStatus(`Pipeline failed: ${error.message || error}`);
+    return { failed: true, label: "pipeline failed", confidence: 0, error: errorText(error) };
   } finally {
     if (trackerInput) trackerInput.dispose();
     if (trackerOutputTensor && typeof trackerOutputTensor.dispose === "function") trackerOutputTensor.dispose();
     if (variantInput) variantInput.dispose();
     if (variantOutputTensor && typeof variantOutputTensor.dispose === "function") variantOutputTensor.dispose();
+    inferenceRunning = false;
+    updateTelemetryDisplay();
+  }
+}
+
+function chooseVoteResult(results) {
+  const votes = new Map();
+  for (const result of results) {
+    if (!result || result.failed) continue;
+    const label = result.label || "No aircraft detected";
+    if (!votes.has(label)) votes.set(label, { label, count: 0, confidenceSum: 0 });
+    const vote = votes.get(label);
+    vote.count += 1;
+    vote.confidenceSum += result.confidence || 0;
+  }
+  if (!votes.size) return null;
+  return Array.from(votes.values()).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return b.confidenceSum - a.confidenceSum;
+  })[0];
+}
+
+async function runVoteBurst() {
+  if (voteBurstRunning) {
+    voteBurstCancel = true;
+    autoScanButton.textContent = "Stopping...";
+    setStatus("Stopping vote scan...");
+    return;
+  }
+  voteBurstRunning = true;
+  voteBurstCancel = false;
+  autoScanButton.textContent = "Stop Vote";
+  captureButton.disabled = true;
+  const results = [];
+  try {
+    for (let i = 0; i < VOTE_BURST_SIZE; i += 1) {
+      if (voteBurstCancel) break;
+      setStatus(`Vote scan ${i + 1}/${VOTE_BURST_SIZE}...`);
+      const result = await runInference();
+      if (result) results.push(result);
+      if (i < VOTE_BURST_SIZE - 1 && !voteBurstCancel) await delay(VOTE_GAP_MS);
+    }
+    const winner = chooseVoteResult(results);
+    telemetry.lastVoteResult = winner ? { ...winner, sampleCount: results.length } : null;
+    if (winner) {
+      labelEl.textContent = winner.label;
+      confidenceEl.textContent = winner.confidenceSum > 0 ? `${((winner.confidenceSum / winner.count) * 100).toFixed(1)}% avg` : "-";
+      setStatus(`Vote result: ${winner.label} (${winner.count}/${results.length})`);
+      appendScanLog({
+        failed: false,
+        result: `vote: ${winner.label}`,
+        confidence: winner.confidenceSum / Math.max(1, winner.count),
+        vote_size: VOTE_BURST_SIZE,
+        vote_samples: results,
+        vote_count: winner.count,
+        source: sourceMode,
+        source_description: getSourceDescription(),
+        camera: telemetry.camera,
+        memory: getMemoryInfo(),
+        error: null,
+      });
+    } else if (!voteBurstCancel) {
+      setStatus("Vote scan finished without a valid result.");
+    }
+  } finally {
+    voteBurstRunning = false;
+    voteBurstCancel = false;
+    captureButton.disabled = false;
+    autoScanButton.textContent = "Vote Scan";
     updateTelemetryDisplay();
   }
 }
@@ -619,6 +722,8 @@ function buildReport() {
     last_confidence: telemetry.lastConfidence,
     last_tracker_box: telemetry.lastTrackerBox,
     last_tracker_score: telemetry.lastTrackerScore,
+    last_vote_result: telemetry.lastVoteResult,
+    vote_burst_size: VOTE_BURST_SIZE,
     scan_log_entries: scanLog.length,
     scan_log: scanLog,
     debug_log: debugLog,
@@ -656,18 +761,7 @@ loadModelButton.addEventListener("click", async () => {
   }
 });
 captureButton.addEventListener("click", runInference);
-autoScanButton.addEventListener("click", () => {
-  if (autoScanTimer) {
-    clearInterval(autoScanTimer);
-    autoScanTimer = null;
-    autoScanButton.textContent = "Auto Scan";
-    setStatus("Auto scan stopped.");
-    return;
-  }
-  autoScanTimer = setInterval(runInference, 1800);
-  autoScanButton.textContent = "Stop Auto";
-  runInference();
-});
+autoScanButton.addEventListener("click", runVoteBurst);
 imageUploadInput.addEventListener("change", async () => {
   const file = imageUploadInput.files && imageUploadInput.files[0];
   if (!file) return;
