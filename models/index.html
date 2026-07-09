@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GOATSOFAI Browser Models</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #0b1f33;
+        --muted: #587084;
+        --line: #d6dfea;
+        --blue: #1e9be0;
+        --green: #18b58a;
+        --amber: #f5a524;
+        --bg: #eef3f9;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+      header {
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        line-height: 1.1;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      a.card {
+        display: block;
+        min-height: 190px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-top: 5px solid var(--blue);
+        border-radius: 8px;
+        background: #fff;
+        color: inherit;
+        text-decoration: none;
+      }
+      a.card:hover {
+        border-top-color: var(--green);
+        box-shadow: 0 8px 22px rgba(11, 31, 51, 0.10);
+      }
+      .tag {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #e8f6fd;
+        color: #0f6fb0;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .tag.warn {
+        background: #fff4e0;
+        color: #7a4d00;
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+      dl {
+        margin: 14px 0 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 14px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        font-weight: 700;
+      }
+      .note {
+        margin-top: 22px;
+        padding: 14px 16px;
+        border-left: 4px solid var(--amber);
+        background: #fff;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>GOATSOFAI Browser Inference Models</h1>
+        <p>Static TensorFlow.js/TFLite demos for the relevant aircraft models. Camera access works reliably on localhost or HTTPS.</p>
+      </header>
+
+      <section class="grid" aria-label="Available browser demos">
+        <a class="card" href="baseline_416_unified/">
+          <span class="tag">trusted baseline</span>
+          <h2>Unified 416 baseline</h2>
+          <p>Single-pass app baseline used for the poster headline.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>416 x 416</dd>
+            <dt>Accuracy</dt><dd>90.58% FGVC held-out</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="all_original_10k_scrapedval_416/">
+          <span class="tag warn">domain-shift test</span>
+          <h2>All-original 10k 416</h2>
+          <p>Trained on all original FGVC images with real boxes; scraped images used only for type validation.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>416 x 416</dd>
+            <dt>Scraped top-1</dt><dd>73.98%</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="original_8k_416/">
+          <span class="tag">comparison model</span>
+          <h2>Original-8k 416</h2>
+          <p>Original-only detector used to compare against the scraped-trained unified baseline.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>416 x 416</dd>
+            <dt>Accuracy</dt><dd>89.05% FGVC held-out</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="final_phone_416_all_original/">
+          <span class="tag warn">deployment candidate</span>
+          <h2>Final-phone 416</h2>
+          <p>All-original phone candidate; not a fair FGVC benchmark because old test images are in training.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>416 x 416</dd>
+            <dt>Status</dt><dd>browser-ready</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="final_phone_640_all_original/">
+          <span class="tag warn">deployment candidate</span>
+          <h2>Final-phone 640</h2>
+          <p>Higher-resolution all-original phone candidate for speed/quality comparison.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>640 x 640</dd>
+            <dt>Status</dt><dd>browser-ready</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="final_phone_960_stopped_best/">
+          <span class="tag warn">heavy model</span>
+          <h2>Final-phone 960</h2>
+          <p>Stopped-best 960 detector. Useful for comparison, but expected to be slow in-browser.</p>
+          <dl>
+            <dt>Model</dt><dd>detector</dd>
+            <dt>Input</dt><dd>960 x 960</dd>
+            <dt>Status</dt><dd>browser-ready</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="airport_pipeline_960_classifier_416/">
+          <span class="tag">two-stage</span>
+          <h2>Tracker 960 + classifier 416</h2>
+          <p>Browser pipeline: first locate the aircraft, then classify the cropped aircraft type.</p>
+          <dl>
+            <dt>Models</dt><dd>tracker + classifier</dd>
+            <dt>Input</dt><dd>960 then 416</dd>
+            <dt>Classifier top-1</dt><dd>90.6% FGVC crops</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="airport_pipeline_960_416/">
+          <span class="tag">two-stage old</span>
+          <h2>Tracker 960 + detector 416</h2>
+          <p>Earlier two-stage browser pipeline kept for debugging and comparison.</p>
+          <dl>
+            <dt>Models</dt><dd>tracker + detector</dd>
+            <dt>Input</dt><dd>960 then 416</dd>
+            <dt>Status</dt><dd>browser-ready</dd>
+          </dl>
+        </a>
+      </section>
+
+      <p class="note">Use the 90.58% baseline for fair held-out FGVC accuracy. Use the 73.98% scraped-validation number to explain domain shift. The all-original phone models are deployment candidates, not fair held-out benchmarks.</p>
+    </main>
+  </body>
+</html>

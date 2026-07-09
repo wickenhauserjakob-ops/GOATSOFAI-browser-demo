@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GOATSOFAI Browser Inference</title>
+    <link rel="stylesheet" href="style.css?v=8">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/tf-tflite.min.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="toolbar">
+        <div>
+          <h1>GOATSOFAI</h1>
+          <p id="status">Loading model...</p>
+        </div>
+        <button id="toggleCamera" type="button">Switch Camera</button>
+      </header>
+
+      <section class="stage">
+        <div class="preview">
+          <video id="video" autoplay playsinline muted></video>
+          <img id="uploadedImage" alt="">
+          <canvas id="overlay"></canvas>
+        </div>
+        <aside class="panel">
+          <div class="metric">
+            <span>Model</span>
+            <strong>All-original 10k 416</strong>
+          </div>
+          <div class="metric">
+            <span>Scraped top-1</span>
+            <strong>73.98%</strong>
+          </div>
+          <div class="metric">
+            <span>Last result</span>
+            <strong id="label">-</strong>
+          </div>
+          <div class="metric">
+            <span>Confidence</span>
+            <strong id="confidence">-</strong>
+          </div>
+          <div class="metric">
+            <span>Best raw candidate</span>
+            <strong id="bestCandidate">-</strong>
+          </div>
+          <div class="metric">
+            <span>A320 raw score</span>
+            <strong id="a320Score">-</strong>
+          </div>
+          <div class="metric">
+            <span>A320 vs 737-200</span>
+            <strong id="a320Vs737">-</strong>
+          </div>
+          <div class="metric">
+            <span>Top raw classes</span>
+            <strong id="topClasses">-</strong>
+          </div>
+          <div class="telemetry" aria-label="Runtime telemetry">
+            <div class="telemetry-row">
+              <span>Last scan</span>
+              <strong id="lastScanMs">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Average scan</span>
+              <strong id="avgScanMs">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Throughput</span>
+              <strong id="throughput">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Runs</span>
+              <strong id="runCount">0</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Logged scans</span>
+              <strong id="logCount">0</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Model load</span>
+              <strong id="modelLoadMs">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Model size</span>
+              <strong id="modelSize">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Camera</span>
+              <strong id="cameraInfo">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Battery</span>
+              <strong id="batteryInfo">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Memory</span>
+              <strong id="memoryInfo">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Network</span>
+              <strong id="networkInfo">-</strong>
+            </div>
+            <div class="telemetry-row">
+              <span>Device</span>
+              <strong id="deviceInfo">-</strong>
+            </div>
+          </div>
+          <label class="threshold-control" for="confidenceThreshold">
+            <span>Confidence threshold</span>
+            <strong id="thresholdValue">25%</strong>
+            <input id="confidenceThreshold" type="range" min="1" max="70" value="25">
+          </label>
+          <div class="actions">
+            <button id="loadModel" type="button">Load Model</button>
+            <label class="file-button" for="imageUpload">Upload Image</label>
+            <input id="imageUpload" type="file" accept="image/*">
+            <button id="useCamera" type="button">Use Camera</button>
+            <button id="capture" type="button">Run Scan</button>
+            <button id="autoScan" type="button">Auto Scan</button>
+            <button id="copyReport" type="button">Copy Report</button>
+            <button id="downloadLog" type="button">Download Log</button>
+            <button id="resetStats" type="button">Reset Stats</button>
+            <button id="copyDebug" type="button">Copy Debug</button>
+          </div>
+          <pre id="debug"></pre>
+        </aside>
+      </section>
+
+      <canvas id="inputCanvas" width="416" height="416"></canvas>
+    </main>
+    <script src="app.js?v=8"></script>
+  </body>
+</html>
