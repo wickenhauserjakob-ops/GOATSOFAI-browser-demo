@@ -7,7 +7,7 @@ const CROP_EXPAND = 1.8;
 const MIN_CROP_SOURCE_PX = 416;
 const VOTE_BURST_SIZE = 3;
 const VOTE_GAP_MS = 300;
-const ASSET_VERSION = "v3cls";
+const ASSET_VERSION = "v4cam";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -54,6 +54,9 @@ let trackerModel = null;
 let variantModel = null;
 let labels = [];
 let facingMode = "environment";
+let cameraDevices = [];
+let activeCameraDeviceId = null;
+let cameraRestartingForRear = false;
 let trackerLetterbox = { scale: 1, padX: 0, padY: 0, sourceWidth: 1, sourceHeight: 1 };
 let cropLetterbox = { scale: 1, padX: 0, padY: 0, cropWidth: 1, cropHeight: 1 };
 let inferenceRunning = false;
@@ -298,20 +301,117 @@ async function startCamera() {
   }
   try {
     if (video.srcObject) video.srcObject.getTracks().forEach((track) => track.stop());
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    });
+    const stream = await openPreferredCamera();
     video.srcObject = stream;
     await video.play();
-    const settings = stream.getVideoTracks()[0]?.getSettings?.() || {};
-    telemetry.camera = `${video.videoWidth || settings.width}x${video.videoHeight || settings.height} ${settings.frameRate || ""} fps`.trim();
+    const track = stream.getVideoTracks()[0];
+    const settings = track?.getSettings?.() || {};
+    activeCameraDeviceId = settings.deviceId || activeCameraDeviceId;
+    await refreshCameraDevices();
+    const rearDevice = findCameraDevice("environment");
+    const activeDevice = cameraDevices.find((device) => device.deviceId === activeCameraDeviceId);
+    if (
+      facingMode === "environment" &&
+      rearDevice &&
+      activeDevice &&
+      rearDevice.deviceId !== activeDevice.deviceId &&
+      !isRearCameraLabel(activeDevice.label) &&
+      !cameraRestartingForRear
+    ) {
+      cameraRestartingForRear = true;
+      activeCameraDeviceId = rearDevice.deviceId;
+      setStatus("Switching to rear camera...");
+      await startCamera();
+      cameraRestartingForRear = false;
+      return;
+    }
+    cameraRestartingForRear = false;
+    const label = activeDevice?.label ? ` ${activeDevice.label}` : "";
+    const mode = settings.facingMode ? ` ${settings.facingMode}` : "";
+    telemetry.camera = `${video.videoWidth || settings.width}x${video.videoHeight || settings.height} ${settings.frameRate || ""} fps${mode}${label}`.trim();
     setPreviewMode("camera");
     updateTelemetryDisplay();
   } catch (error) {
+    cameraRestartingForRear = false;
     setStatus(`Camera failed: ${error.message || error}`);
     appendDebug(errorText(error));
   }
+}
+
+async function refreshCameraDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameraDevices = devices.filter((device) => device.kind === "videoinput");
+    if (!activeCameraDeviceId && cameraDevices.length) {
+      activeCameraDeviceId = cameraDevices[0].deviceId;
+    }
+    toggleButton.textContent = cameraDevices.length > 1 ? "Switch Camera" : "Switch Camera";
+    appendDebug(`cameras: ${cameraDevices.map((device) => device.label || device.deviceId || "camera").join(" | ") || "not labelled"}`);
+  } catch (error) {
+    appendDebug(`camera enumeration failed: ${errorText(error)}`);
+  }
+}
+
+function isRearCameraLabel(label) {
+  return /back|rear|environment|world|rueck|rück|hinten|kamera 0|camera 0/i.test(label || "");
+}
+
+function isFrontCameraLabel(label) {
+  return /front|user|face|selfie|facetime|true depth|truedepth|vorne/i.test(label || "");
+}
+
+function findCameraDevice(mode) {
+  if (!cameraDevices.length) return null;
+  const matcher = mode === "environment" ? isRearCameraLabel : isFrontCameraLabel;
+  return cameraDevices.find((device) => matcher(device.label)) || null;
+}
+
+function buildCameraConstraints(deviceId = null, mode = facingMode, exactFacing = false) {
+  const videoConstraints = {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
+  if (deviceId) {
+    videoConstraints.deviceId = { exact: deviceId };
+  } else {
+    videoConstraints.facingMode = exactFacing ? { exact: mode } : { ideal: mode };
+  }
+  return { video: videoConstraints, audio: false };
+}
+
+async function openPreferredCamera() {
+  await refreshCameraDevices();
+  const labelledDevice = findCameraDevice(facingMode);
+  if (labelledDevice) activeCameraDeviceId = labelledDevice.deviceId;
+  const attempts = [];
+  if (activeCameraDeviceId) attempts.push(buildCameraConstraints(activeCameraDeviceId));
+  attempts.push(buildCameraConstraints(null, facingMode, true));
+  attempts.push(buildCameraConstraints(null, facingMode, false));
+  attempts.push({ video: true, audio: false });
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      lastError = error;
+      appendDebug(`camera attempt failed: ${errorText(error)}`);
+    }
+  }
+  throw lastError || new Error("No camera stream available.");
+}
+
+function selectNextCameraDevice() {
+  if (cameraDevices.length < 2) {
+    facingMode = facingMode === "environment" ? "user" : "environment";
+    activeCameraDeviceId = null;
+    return;
+  }
+  const currentIndex = cameraDevices.findIndex((device) => device.deviceId === activeCameraDeviceId);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % cameraDevices.length : 0;
+  const nextDevice = cameraDevices[nextIndex];
+  activeCameraDeviceId = nextDevice.deviceId;
+  facingMode = isRearCameraLabel(nextDevice.label) ? "environment" : "user";
 }
 
 function drawTrackerFrame() {
@@ -757,7 +857,8 @@ window.addEventListener("error", (event) => appendDebug(`window error: ${event.m
 window.addEventListener("unhandledrejection", (event) => appendDebug(`unhandled rejection: ${errorText(event.reason)}`));
 
 toggleButton.addEventListener("click", async () => {
-  facingMode = facingMode === "environment" ? "user" : "environment";
+  await refreshCameraDevices();
+  selectNextCameraDevice();
   setPreviewMode("camera");
   await startCamera();
 });
