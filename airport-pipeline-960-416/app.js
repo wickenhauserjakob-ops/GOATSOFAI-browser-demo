@@ -7,7 +7,7 @@ const CROP_EXPAND = 1.8;
 const MIN_CROP_SOURCE_PX = 416;
 const VOTE_BURST_SIZE = 3;
 const VOTE_GAP_MS = 300;
-const ASSET_VERSION = "v4cam";
+const ASSET_VERSION = "v5auto";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -62,6 +62,7 @@ let cropLetterbox = { scale: 1, padX: 0, padY: 0, cropWidth: 1, cropHeight: 1 };
 let inferenceRunning = false;
 let voteBurstRunning = false;
 let voteBurstCancel = false;
+let autoScanRunning = false;
 let loadingModel = false;
 let sourceMode = "camera";
 let uploadedImageUrl = null;
@@ -222,10 +223,7 @@ function setPreviewMode(mode) {
   if (mode === "upload") {
     video.style.display = "none";
     uploadedImage.style.display = "block";
-    if (voteBurstRunning) {
-      voteBurstCancel = true;
-      autoScanButton.textContent = "Vote Scan";
-    }
+    stopAutoScan("Auto scan stopped for uploaded image.");
     setStatus(trackerModel && variantModel ? "Image loaded. Press Run Scan." : "Image loaded. Press Load Model.");
     return;
   }
@@ -736,16 +734,8 @@ function chooseVoteResult(results) {
 }
 
 async function runVoteBurst() {
-  if (voteBurstRunning) {
-    voteBurstCancel = true;
-    autoScanButton.textContent = "Stopping...";
-    setStatus("Stopping vote scan...");
-    return;
-  }
   voteBurstRunning = true;
   voteBurstCancel = false;
-  autoScanButton.textContent = "Stop Vote";
-  captureButton.disabled = true;
   const results = [];
   try {
     for (let i = 0; i < VOTE_BURST_SIZE; i += 1) {
@@ -780,8 +770,44 @@ async function runVoteBurst() {
   } finally {
     voteBurstRunning = false;
     voteBurstCancel = false;
+    updateTelemetryDisplay();
+  }
+}
+
+function stopAutoScan(message = "Auto scan stopped.") {
+  if (autoScanRunning || voteBurstRunning) {
+    autoScanRunning = false;
+    voteBurstCancel = true;
+    autoScanButton.textContent = "Auto Scan";
     captureButton.disabled = false;
-    autoScanButton.textContent = "Vote Scan";
+    setStatus(message);
+  }
+}
+
+async function runAutoScanLoop() {
+  if (autoScanRunning) {
+    stopAutoScan();
+    return;
+  }
+  if (!trackerModel || !variantModel) {
+    setStatus("Load model first.");
+    return;
+  }
+  autoScanRunning = true;
+  voteBurstCancel = false;
+  autoScanButton.textContent = "Stop Auto";
+  captureButton.disabled = true;
+  try {
+    while (autoScanRunning) {
+      await runVoteBurst();
+      if (!autoScanRunning) break;
+      await delay(VOTE_GAP_MS);
+    }
+  } finally {
+    autoScanRunning = false;
+    voteBurstCancel = false;
+    captureButton.disabled = false;
+    autoScanButton.textContent = "Auto Scan";
     updateTelemetryDisplay();
   }
 }
@@ -861,7 +887,7 @@ loadModelButton.addEventListener("click", async () => {
   }
 });
 captureButton.addEventListener("click", runInference);
-autoScanButton.addEventListener("click", runVoteBurst);
+autoScanButton.addEventListener("click", runAutoScanLoop);
 imageUploadInput.addEventListener("change", async () => {
   const file = imageUploadInput.files && imageUploadInput.files[0];
   if (!file) return;
