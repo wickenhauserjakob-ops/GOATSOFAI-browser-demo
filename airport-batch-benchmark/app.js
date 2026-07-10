@@ -1,4 +1,4 @@
-const ASSET_VERSION = "batch-v5-noa220";
+const ASSET_VERSION = "batch-v6-robust416-noa220";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 const AIRPORT_MANIFEST_URL = "airport_manifest.json";
 const IOU_THRESHOLD = 0.45;
@@ -71,6 +71,15 @@ const MODELS = [
     classifierUrl: "../airport-pipeline-960-classifier-416/classifier.tflite",
     defaultEnabled: true,
     note: "Tracker zooms/crops first, then classifier predicts type.",
+  },
+  {
+    id: "airport_pipeline_960_robust_classifier_416",
+    name: "Pipeline 960 -> robust classifier 416",
+    type: "pipeline",
+    trackerUrl: "../airport-pipeline-960-robust-classifier-416/tracker.tflite",
+    classifierUrl: "../airport-pipeline-960-robust-classifier-416/classifier.tflite",
+    defaultEnabled: true,
+    note: "Same tracker, robust/noise-trained 416 crop classifier.",
   },
   {
     id: "airport_pipeline_960_detector_416",
