@@ -1,4 +1,4 @@
-const ASSET_VERSION = "batch-v4-rectcrop";
+const ASSET_VERSION = "batch-v5-noa220";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 const AIRPORT_MANIFEST_URL = "airport_manifest.json";
 const IOU_THRESHOLD = 0.45;
@@ -86,7 +86,6 @@ const MODELS = [
 
 const LABELS_URL = "../labels.txt";
 const AIRCRAFT_TYPES = [
-  "A220",
   "A320",
   "A321",
   "A380",
@@ -168,7 +167,7 @@ function initUi() {
   for (const type of AIRCRAFT_TYPES) {
     const option = document.createElement("option");
     option.value = type;
-    option.textContent = type === "A220" ? "A220 (out of FGVC label set)" : type;
+    option.textContent = type;
     groundTruthEl.appendChild(option);
   }
   groundTruthEl.value = "A320";
@@ -216,10 +215,10 @@ function updateDatasetUi() {
   fileButtonEl.classList.toggle("disabled", bundled);
   fileButtonEl.textContent = bundled ? "Bundled Set Active" : "Select Images";
   if (bundled) {
-    const count = airportManifest.length || 48;
-    const unsupported = airportManifest.filter((entry) => entry.label === "A220").length || 8;
+    const count = airportManifest.length || 40;
+    const unsupported = labels.length ? airportManifest.filter((entry) => !labels.includes(entry.label)).length : 0;
     const supported = count - unsupported;
-    fileCountEl.textContent = `${count} bundled, ${supported} scored`;
+    fileCountEl.textContent = unsupported ? `${count} bundled, ${supported} scored` : `${count} bundled`;
   } else {
     fileCountEl.textContent = String(selectedFiles.length);
   }
