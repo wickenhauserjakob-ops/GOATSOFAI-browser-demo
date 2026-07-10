@@ -1,4 +1,4 @@
-const ASSET_VERSION = "batch-v3";
+const ASSET_VERSION = "batch-v4-rectcrop";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 const AIRPORT_MANIFEST_URL = "airport_manifest.json";
 const IOU_THRESHOLD = 0.45;
@@ -217,7 +217,9 @@ function updateDatasetUi() {
   fileButtonEl.textContent = bundled ? "Bundled Set Active" : "Select Images";
   if (bundled) {
     const count = airportManifest.length || 48;
-    fileCountEl.textContent = `${count} bundled`;
+    const unsupported = airportManifest.filter((entry) => entry.label === "A220").length || 8;
+    const supported = count - unsupported;
+    fileCountEl.textContent = `${count} bundled, ${supported} scored`;
   } else {
     fileCountEl.textContent = String(selectedFiles.length);
   }
@@ -430,14 +432,13 @@ function trackerBoxToSource(box, letterbox) {
 function expandCrop(box, sourceWidth, sourceHeight) {
   const cx = (box[0] + box[2]) / 2;
   const cy = (box[1] + box[3]) / 2;
-  const boxWidth = Math.max(box[2] - box[0], MIN_CROP_SOURCE_PX);
-  const boxHeight = Math.max(box[3] - box[1], MIN_CROP_SOURCE_PX);
-  const side = Math.max(boxWidth, boxHeight) * CROP_EXPAND;
+  const halfWidth = Math.max(((box[2] - box[0]) * CROP_EXPAND) / 2, MIN_CROP_SOURCE_PX / 2);
+  const halfHeight = Math.max(((box[3] - box[1]) * CROP_EXPAND) / 2, MIN_CROP_SOURCE_PX / 2);
   return [
-    Math.max(0, cx - side / 2),
-    Math.max(0, cy - side / 2),
-    Math.min(sourceWidth, cx + side / 2),
-    Math.min(sourceHeight, cy + side / 2),
+    Math.max(0, cx - halfWidth),
+    Math.max(0, cy - halfHeight),
+    Math.min(sourceWidth, cx + halfWidth),
+    Math.min(sourceHeight, cy + halfHeight),
   ];
 }
 
@@ -750,6 +751,7 @@ function renderSummary(report) {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${summary.model_name}</td>
+      <td>${summary.supported_images || summary.images} scored / ${summary.images} run</td>
       <td>${summary.top1_correct}/${summary.supported_images || summary.images} (${formatPercent(summary.top1_accuracy)})</td>
       <td>${summary.top5_correct}/${summary.supported_images || summary.images} (${formatPercent(summary.top5_accuracy)})</td>
       <td>${summary.no_detection}/${summary.supported_images || summary.images} (${formatPercent(summary.no_detection_rate)})</td>

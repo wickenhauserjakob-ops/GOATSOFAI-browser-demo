@@ -7,7 +7,7 @@ const CROP_EXPAND = 1.8;
 const MIN_CROP_SOURCE_PX = 416;
 const VOTE_BURST_SIZE = 3;
 const VOTE_GAP_MS = 300;
-const ASSET_VERSION = "v5auto";
+const ASSET_VERSION = "v6rectcrop";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -73,7 +73,7 @@ const LOG_STORAGE_KEY = "goatsofai-airport-tracker-classifier-log-v1";
 const MAX_LOG_ENTRIES = 500;
 
 const telemetry = {
-  build: "airport-pipeline-tracker-classifier-v1-2026-07-09",
+  build: "airport-pipeline-tracker-classifier-v2-rectcrop-2026-07-10",
   startedAt: new Date().toISOString(),
   modelBytes: null,
   trackerLoadMs: null,
@@ -514,14 +514,13 @@ function trackerBoxToSource(box) {
 function expandCrop(box, sourceWidth, sourceHeight) {
   const cx = (box[0] + box[2]) / 2;
   const cy = (box[1] + box[3]) / 2;
-  const bw = Math.max(box[2] - box[0], MIN_CROP_SOURCE_PX);
-  const bh = Math.max(box[3] - box[1], MIN_CROP_SOURCE_PX);
-  const side = Math.max(bw, bh) * CROP_EXPAND;
+  const halfWidth = Math.max(((box[2] - box[0]) * CROP_EXPAND) / 2, MIN_CROP_SOURCE_PX / 2);
+  const halfHeight = Math.max(((box[3] - box[1]) * CROP_EXPAND) / 2, MIN_CROP_SOURCE_PX / 2);
   return [
-    Math.max(0, cx - side / 2),
-    Math.max(0, cy - side / 2),
-    Math.min(sourceWidth, cx + side / 2),
-    Math.min(sourceHeight, cy + side / 2),
+    Math.max(0, cx - halfWidth),
+    Math.max(0, cy - halfHeight),
+    Math.min(sourceWidth, cx + halfWidth),
+    Math.min(sourceHeight, cy + halfHeight),
   ];
 }
 
