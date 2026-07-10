@@ -1,4 +1,4 @@
-const ASSET_VERSION = "batch-v2";
+const ASSET_VERSION = "batch-v3";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 const AIRPORT_MANIFEST_URL = "airport_manifest.json";
 const IOU_THRESHOLD = 0.45;
@@ -33,7 +33,7 @@ const MODELS = [
     type: "detector",
     size: 416,
     modelUrl: "../original-8k-416/model.tflite",
-    defaultEnabled: false,
+    defaultEnabled: true,
     note: "Original-only 8k comparison detector.",
   },
   {
@@ -42,7 +42,7 @@ const MODELS = [
     type: "detector",
     size: 416,
     modelUrl: "../final-phone-416/model.tflite",
-    defaultEnabled: false,
+    defaultEnabled: true,
     note: "All-original phone candidate at 416.",
   },
   {
@@ -60,7 +60,7 @@ const MODELS = [
     type: "detector",
     size: 960,
     modelUrl: "../final-phone-960/model.tflite",
-    defaultEnabled: false,
+    defaultEnabled: true,
     note: "Heavy direct detector, slower.",
   },
   {
@@ -71,6 +71,16 @@ const MODELS = [
     classifierUrl: "../airport-pipeline-960-classifier-416/classifier.tflite",
     defaultEnabled: true,
     note: "Tracker zooms/crops first, then classifier predicts type.",
+  },
+  {
+    id: "airport_pipeline_960_detector_416",
+    name: "Pipeline 960 -> detector 416",
+    type: "pipeline_detector",
+    trackerUrl: "../airport-pipeline-960-416/tracker.tflite",
+    detectorUrl: "../airport-pipeline-960-416/variant.tflite",
+    detectorSize: 416,
+    defaultEnabled: true,
+    note: "Older two-stage pipeline: tracker crop, then 416 detector predicts type.",
   },
 ];
 
@@ -260,6 +270,13 @@ async function loadModelConfig(config) {
   }
   setStatus(`Loading ${config.name} tracker...`);
   const tracker = await rt.loadTFLiteModel(`${config.trackerUrl}?${ASSET_VERSION}`);
+  if (config.type === "pipeline_detector") {
+    setStatus(`Loading ${config.name} detector...`);
+    const detector = await rt.loadTFLiteModel(`${config.detectorUrl}?${ASSET_VERSION}`);
+    const loaded = { ...config, tracker, detector, loadMs: performance.now() - started };
+    loadedModels.set(config.id, loaded);
+    return loaded;
+  }
   setStatus(`Loading ${config.name} classifier...`);
   const classifier = await rt.loadTFLiteModel(`${config.classifierUrl}?${ASSET_VERSION}`);
   const loaded = { ...config, tracker, classifier, loadMs: performance.now() - started };
@@ -511,6 +528,40 @@ async function runPipelineModel(loaded, image, gtClass) {
   }
 }
 
+async function runPipelineDetectorModel(loaded, image, gtClass, threshold) {
+  const started = performance.now();
+  let trackerInput = null;
+  let trackerOutputTensor = null;
+  let detectorInput = null;
+  let detectorOutputTensor = null;
+  try {
+    const letterbox = drawLetterboxToCanvas(image, workCanvas, TRACKER_SIZE);
+    trackerInput = tensorFromCanvas(workCanvas);
+    const trackerOutput = loaded.tracker.predict(trackerInput);
+    trackerOutputTensor = Array.isArray(trackerOutput) ? trackerOutput[0] : trackerOutput;
+    const trackerDecoded = decodeDetectorOutput(trackerOutputTensor, ["aircraft"], TRACKER_CONF_THRESHOLD, TRACKER_SIZE);
+    const trackerBest = trackerDecoded.detections[0] || null;
+    if (!trackerBest) {
+      return buildResult(loaded, gtClass, "NO_TRACKER_DETECTION", 0, [], performance.now() - started, null, null, null);
+    }
+    const sourceBox = trackerBoxToSource(trackerBest.box, letterbox);
+    const cropBox = expandCrop(sourceBox, letterbox.sourceWidth, letterbox.sourceHeight);
+    drawCrop(image, cropBox);
+    detectorInput = tensorFromCanvas(cropCanvas);
+    const detectorOutput = loaded.detector.predict(detectorInput);
+    detectorOutputTensor = Array.isArray(detectorOutput) ? detectorOutput[0] : detectorOutput;
+    const decoded = decodeDetectorOutput(detectorOutputTensor, labels, threshold, loaded.detectorSize || CLASSIFIER_SIZE);
+    const best = decoded.detections[0] || null;
+    const top5 = decoded.detections.slice(0, 5).map((detection) => ({ label: detection.label, score: detection.score }));
+    return buildResult(loaded, gtClass, best ? best.label : "NO_DETECTION", best ? best.score : 0, top5, performance.now() - started, sourceBox, trackerBest.score, cropBox);
+  } finally {
+    if (trackerInput) trackerInput.dispose();
+    if (trackerOutputTensor && typeof trackerOutputTensor.dispose === "function") trackerOutputTensor.dispose();
+    if (detectorInput) detectorInput.dispose();
+    if (detectorOutputTensor && typeof detectorOutputTensor.dispose === "function") detectorOutputTensor.dispose();
+  }
+}
+
 function buildResult(model, gtClass, predClass, confidence, top5, scanMs, box, trackerScore = null, cropBox = null) {
   const gtSupported = labels.includes(gtClass);
   const top5Classes = top5.map((item) => item.label);
@@ -655,7 +706,9 @@ async function runBenchmark() {
         try {
           const result = config.type === "pipeline"
             ? await runPipelineModel(loaded, loadedImage.image, item.gtClass)
-            : await runDetectorModel(loaded, loadedImage.image, item.gtClass, threshold);
+            : config.type === "pipeline_detector"
+              ? await runPipelineDetectorModel(loaded, loadedImage.image, item.gtClass, threshold)
+              : await runDetectorModel(loaded, loadedImage.image, item.gtClass, threshold);
           result.file_id = item.id;
           result.file_name = item.name;
           result.file_size = item.size;
