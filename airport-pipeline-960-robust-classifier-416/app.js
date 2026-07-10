@@ -3,11 +3,12 @@ const VARIANT_SIZE = 416;
 const TRACKER_CONF_THRESHOLD = 0.08;
 const VARIANT_CONF_THRESHOLD = 0.20;
 const IOU_THRESHOLD = 0.45;
-const CROP_EXPAND = 1.8;
+const CROP_EXPAND = 2.5;
 const MIN_CROP_SOURCE_PX = 416;
 const VOTE_BURST_SIZE = 10;
+const MAX_UPLOAD_VOTE_IMAGES = 10;
 const VOTE_GAP_MS = 150;
-const ASSET_VERSION = "v8robust416vote10";
+const ASSET_VERSION = "v10robust416vote10upload10expand25";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -67,13 +68,15 @@ let loadingModel = false;
 let sourceMode = "camera";
 let uploadedImageUrl = null;
 let uploadedImageMeta = null;
+let uploadedBatch = [];
+let uploadedBatchIndex = 0;
 let scanLog = [];
 let debugLog = [];
 const LOG_STORAGE_KEY = "goatsofai-airport-tracker-robust-classifier-vote10-log-v1";
 const MAX_LOG_ENTRIES = 500;
 
 const telemetry = {
-  build: "airport-pipeline-tracker-robust-classifier-vote10-v1-2026-07-10",
+  build: "airport-pipeline-tracker-robust-classifier-vote10-upload10-expand25-v3-2026-07-10",
   startedAt: new Date().toISOString(),
   modelBytes: null,
   trackerLoadMs: null,
@@ -100,6 +103,7 @@ const telemetry = {
   lastWatchScores: {},
   lastTopClasses: [],
   lastVoteResult: null,
+  uploadVoteCount: 0,
   camera: "",
 };
 
@@ -211,6 +215,37 @@ function appendScanLog(entry) {
   updateTelemetryDisplay();
 }
 
+function clearUploadedBatch() {
+  for (const item of uploadedBatch) {
+    if (item?.url) URL.revokeObjectURL(item.url);
+  }
+  uploadedBatch = [];
+  uploadedBatchIndex = 0;
+  uploadedImageUrl = null;
+  uploadedImageMeta = null;
+}
+
+function selectedUploadCount() {
+  return sourceMode === "upload" ? Math.max(1, uploadedBatch.length) : VOTE_BURST_SIZE;
+}
+
+function loadUploadedBatchImage(index) {
+  const item = uploadedBatch[index];
+  if (!item) return Promise.reject(new Error("No uploaded image at this index."));
+  uploadedBatchIndex = index;
+  uploadedImageUrl = item.url;
+  uploadedImageMeta = item.meta;
+  return new Promise((resolve, reject) => {
+    uploadedImage.onload = () => {
+      item.meta.width = uploadedImage.naturalWidth;
+      item.meta.height = uploadedImage.naturalHeight;
+      resolve(item.meta);
+    };
+    uploadedImage.onerror = () => reject(new Error(`Could not load uploaded image ${item.meta.name}`));
+    uploadedImage.src = item.url;
+  });
+}
+
 function getActiveSource() {
   if (sourceMode === "upload" && uploadedImage.complete && uploadedImage.naturalWidth > 0) {
     return { element: uploadedImage, width: uploadedImage.naturalWidth, height: uploadedImage.naturalHeight, kind: "upload" };
@@ -224,7 +259,8 @@ function setPreviewMode(mode) {
     video.style.display = "none";
     uploadedImage.style.display = "block";
     stopAutoScan("Auto scan stopped for uploaded image.");
-    setStatus(trackerModel && variantModel ? "Image loaded. Press Run Vote Scan." : "Image loaded. Press Load Model.");
+    const count = uploadedBatch.length || 1;
+    setStatus(trackerModel && variantModel ? `${count} image(s) loaded. Press Run Vote Scan.` : `${count} image(s) loaded. Press Load Model.`);
     return;
   }
   uploadedImage.style.display = "none";
@@ -710,6 +746,8 @@ async function runInference() {
       confidence: telemetry.lastConfidence || 0,
       elapsed,
       trackerScore: telemetry.lastTrackerScore || 0,
+      source: sourceMode,
+      sourceDescription: getSourceDescription(),
     };
   } catch (error) {
     console.error(error);
@@ -718,7 +756,7 @@ async function runInference() {
     appendDebug(`pipeline failed: ${errorText(error)}`);
     appendScanLog({ failed: true, result: "pipeline failed", error: errorText(error), camera: telemetry.camera, memory: getMemoryInfo() });
     setStatus(`Pipeline failed: ${error.message || error}`);
-    return { failed: true, label: "pipeline failed", confidence: 0, error: errorText(error) };
+    return { failed: true, label: "pipeline failed", confidence: 0, error: errorText(error), source: sourceMode, sourceDescription: getSourceDescription() };
   } finally {
     if (trackerInput) trackerInput.dispose();
     if (trackerOutputTensor && typeof trackerOutputTensor.dispose === "function") trackerOutputTensor.dispose();
@@ -747,16 +785,33 @@ function chooseVoteResult(results) {
 }
 
 async function runVoteBurst() {
+  if (sourceMode === "upload" && uploadedBatch.length === 0) {
+    setStatus("Upload 1-10 images first.");
+    return;
+  }
   voteBurstRunning = true;
   voteBurstCancel = false;
   const results = [];
+  const sampleCount = sourceMode === "upload" ? Math.min(uploadedBatch.length, MAX_UPLOAD_VOTE_IMAGES) : VOTE_BURST_SIZE;
+  telemetry.uploadVoteCount = sourceMode === "upload" ? sampleCount : 0;
   try {
-    for (let i = 0; i < VOTE_BURST_SIZE; i += 1) {
+    for (let i = 0; i < sampleCount; i += 1) {
       if (voteBurstCancel) break;
-      setStatus(`Vote scan ${i + 1}/${VOTE_BURST_SIZE}...`);
+      if (sourceMode === "upload") {
+        await loadUploadedBatchImage(i);
+        setStatus(`Upload vote ${i + 1}/${sampleCount}: ${uploadedImageMeta?.name || "image"}...`);
+      } else {
+        setStatus(`Vote scan ${i + 1}/${sampleCount}...`);
+      }
       const result = await runInference();
-      if (result) results.push(result);
-      if (i < VOTE_BURST_SIZE - 1 && !voteBurstCancel) await delay(VOTE_GAP_MS);
+      if (result) {
+        results.push({
+          ...result,
+          voteIndex: i + 1,
+          uploadName: sourceMode === "upload" ? uploadedImageMeta?.name || null : null,
+        });
+      }
+      if (sourceMode !== "upload" && i < sampleCount - 1 && !voteBurstCancel) await delay(VOTE_GAP_MS);
     }
     const winner = chooseVoteResult(results);
     telemetry.lastVoteResult = winner ? { ...winner, sampleCount: results.length } : null;
@@ -768,9 +823,11 @@ async function runVoteBurst() {
         failed: false,
         result: `vote: ${winner.label}`,
         confidence: winner.confidenceSum / Math.max(1, winner.count),
-        vote_size: VOTE_BURST_SIZE,
+        vote_mode: sourceMode === "upload" ? "upload_batch" : "camera_burst",
+        vote_size: sampleCount,
         vote_samples: results,
         vote_count: winner.count,
+        upload_vote_count: sourceMode === "upload" ? sampleCount : null,
         source: sourceMode,
         source_description: getSourceDescription(),
         camera: telemetry.camera,
@@ -826,6 +883,10 @@ async function runAutoScanLoop() {
 }
 
 function getSourceDescription() {
+  if (sourceMode === "upload" && uploadedBatch.length > 1) {
+    const activeName = uploadedBatch[uploadedBatchIndex]?.meta?.name || "active image";
+    return `upload batch ${uploadedBatch.length} image(s), active ${uploadedBatchIndex + 1}/${uploadedBatch.length}: ${activeName}`;
+  }
   if (sourceMode === "upload" && uploadedImageMeta) {
     return `upload ${uploadedImageMeta.name} ${uploadedImageMeta.width}x${uploadedImageMeta.height}`;
   }
@@ -835,7 +896,7 @@ function getSourceDescription() {
 function buildReport() {
   return JSON.stringify({
     model: "GOATSOFAI airport tracker plus robust classifier browser pipeline with temporal voting",
-    pipeline: "tracker 960 TFLite -> crop original camera frame -> robust classifier 416 TFLite -> 10-frame majority vote",
+    pipeline: "tracker 960 TFLite -> crop original frame -> robust classifier 416 TFLite -> camera 10-frame vote or upload 1-10 image vote",
     build: telemetry.build,
     timestamp: new Date().toISOString(),
     browser: navigator.userAgent,
@@ -862,6 +923,9 @@ function buildReport() {
     last_tracker_score: telemetry.lastTrackerScore,
     last_vote_result: telemetry.lastVoteResult,
     vote_burst_size: VOTE_BURST_SIZE,
+    max_upload_vote_images: MAX_UPLOAD_VOTE_IMAGES,
+    upload_vote_count: telemetry.uploadVoteCount,
+    uploaded_images: uploadedBatch.map((item, index) => ({ index: index + 1, ...item.meta })),
     scan_log_entries: scanLog.length,
     scan_log: scanLog,
     debug_log: debugLog,
@@ -902,17 +966,25 @@ loadModelButton.addEventListener("click", async () => {
 captureButton.addEventListener("click", runVoteBurst);
 autoScanButton.addEventListener("click", runAutoScanLoop);
 imageUploadInput.addEventListener("change", async () => {
-  const file = imageUploadInput.files && imageUploadInput.files[0];
-  if (!file) return;
-  if (uploadedImageUrl) URL.revokeObjectURL(uploadedImageUrl);
-  uploadedImageUrl = URL.createObjectURL(file);
-  uploadedImageMeta = { name: file.name, size: file.size, type: file.type, width: null, height: null };
-  uploadedImage.onload = () => {
-    uploadedImageMeta.width = uploadedImage.naturalWidth;
-    uploadedImageMeta.height = uploadedImage.naturalHeight;
+  const files = Array.from(imageUploadInput.files || []).filter((file) => file.type.startsWith("image/"));
+  if (!files.length) return;
+  clearUploadedBatch();
+  const selected = files.slice(0, MAX_UPLOAD_VOTE_IMAGES);
+  uploadedBatch = selected.map((file) => ({
+    file,
+    url: URL.createObjectURL(file),
+    meta: { name: file.name, size: file.size, type: file.type, width: null, height: null },
+  }));
+  if (files.length > MAX_UPLOAD_VOTE_IMAGES) {
+    appendDebug(`upload limited: selected ${files.length}, using first ${MAX_UPLOAD_VOTE_IMAGES}`);
+  }
+  try {
+    await loadUploadedBatchImage(0);
     setPreviewMode("upload");
-  };
-  uploadedImage.src = uploadedImageUrl;
+  } catch (error) {
+    setStatus(`Image upload failed: ${error.message || error}`);
+    appendDebug(errorText(error));
+  }
 });
 copyDebugButton.addEventListener("click", async () => {
   const text = debugLog.join("\n");
