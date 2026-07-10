@@ -6,6 +6,7 @@ This is the two-stage phone/browser pipeline using:
 
 - stage 1: `tracker.tflite`, 960 px aircraft tracker/detector
 - stage 2: `classifier.tflite`, robust/noise-trained 416 px aircraft-type classifier
+- runtime smoothing: 10-frame majority vote for live camera scans
 
 The classifier is the robust follow-up `yolov8n-cls` model trained for phone/airport
 domain shift. It uses the same class-label setup as the previous browser
@@ -38,8 +39,15 @@ The PyTorch pipeline audit on the 40-image Munich airport benchmark reported:
 - top-5 aircraft-type accuracy: 28 / 40 = 70.0%
 - tracker/crop detections: 40 / 40
 
-The browser benchmark still needs a clean phone rerun because older browser logs
-used the stale square crop and must not be used as the final poster number.
+The fixed browser batch benchmark, without temporal voting, reported:
+
+- top-1 aircraft-type accuracy: 20 / 40 = 50.0%
+- top-5 aircraft-type accuracy: 28 / 40 = 70.0%
+- tracker/crop detections: 40 / 40
+
+Temporal voting is a live-camera runtime layer. It is expected to help when
+frame-to-frame predictions vary, but it does not fix systematic class collapse
+such as every A320 frame being predicted as A321.
 
 The exported classifier TFLite shape is:
 

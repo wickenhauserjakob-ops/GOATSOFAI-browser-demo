@@ -5,9 +5,9 @@ const VARIANT_CONF_THRESHOLD = 0.20;
 const IOU_THRESHOLD = 0.45;
 const CROP_EXPAND = 1.8;
 const MIN_CROP_SOURCE_PX = 416;
-const VOTE_BURST_SIZE = 3;
-const VOTE_GAP_MS = 300;
-const ASSET_VERSION = "v7robust416rectcrop";
+const VOTE_BURST_SIZE = 10;
+const VOTE_GAP_MS = 150;
+const ASSET_VERSION = "v8robust416vote10";
 const TFLITE_CDN = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/";
 
 const video = document.getElementById("video");
@@ -69,11 +69,11 @@ let uploadedImageUrl = null;
 let uploadedImageMeta = null;
 let scanLog = [];
 let debugLog = [];
-const LOG_STORAGE_KEY = "goatsofai-airport-tracker-robust-classifier-log-v1";
+const LOG_STORAGE_KEY = "goatsofai-airport-tracker-robust-classifier-vote10-log-v1";
 const MAX_LOG_ENTRIES = 500;
 
 const telemetry = {
-  build: "airport-pipeline-tracker-robust-classifier-v1-2026-07-10",
+  build: "airport-pipeline-tracker-robust-classifier-vote10-v1-2026-07-10",
   startedAt: new Date().toISOString(),
   modelBytes: null,
   trackerLoadMs: null,
@@ -224,12 +224,12 @@ function setPreviewMode(mode) {
     video.style.display = "none";
     uploadedImage.style.display = "block";
     stopAutoScan("Auto scan stopped for uploaded image.");
-    setStatus(trackerModel && variantModel ? "Image loaded. Press Run Scan." : "Image loaded. Press Load Model.");
+    setStatus(trackerModel && variantModel ? "Image loaded. Press Run Vote Scan." : "Image loaded. Press Load Model.");
     return;
   }
   uploadedImage.style.display = "none";
   video.style.display = "block";
-  setStatus(trackerModel && variantModel ? "Camera ready. Press Run Scan." : "Camera ready. Press Load Model.");
+  setStatus(trackerModel && variantModel ? "Camera ready. Press Run Vote Scan." : "Camera ready. Press Load Model.");
 }
 
 function waitForRuntime() {
@@ -282,7 +282,7 @@ async function loadModel() {
     mark = performance.now();
     variantModel = await loadTflite(runtime, "classifier.tflite");
     telemetry.variantLoadMs = performance.now() - mark;
-    setStatus("Pipeline ready. Press Run Scan.");
+    setStatus("Pipeline ready. Press Run Vote Scan.");
     captureButton.disabled = false;
     autoScanButton.disabled = false;
     updateTelemetryDisplay();
@@ -791,7 +791,7 @@ function stopAutoScan(message = "Auto scan stopped.") {
   if (autoScanRunning || voteBurstRunning) {
     autoScanRunning = false;
     voteBurstCancel = true;
-    autoScanButton.textContent = "Auto Scan";
+    autoScanButton.textContent = "Auto Vote";
     captureButton.disabled = false;
     setStatus(message);
   }
@@ -820,7 +820,7 @@ async function runAutoScanLoop() {
     autoScanRunning = false;
     voteBurstCancel = false;
     captureButton.disabled = false;
-    autoScanButton.textContent = "Auto Scan";
+    autoScanButton.textContent = "Auto Vote";
     updateTelemetryDisplay();
   }
 }
@@ -834,8 +834,8 @@ function getSourceDescription() {
 
 function buildReport() {
   return JSON.stringify({
-    model: "GOATSOFAI airport tracker plus classifier browser pipeline",
-    pipeline: "tracker 960 TFLite -> crop original camera frame -> classifier 416 TFLite",
+    model: "GOATSOFAI airport tracker plus robust classifier browser pipeline with temporal voting",
+    pipeline: "tracker 960 TFLite -> crop original camera frame -> robust classifier 416 TFLite -> 10-frame majority vote",
     build: telemetry.build,
     timestamp: new Date().toISOString(),
     browser: navigator.userAgent,
@@ -899,7 +899,7 @@ loadModelButton.addEventListener("click", async () => {
     appendDebug(errorText(error));
   }
 });
-captureButton.addEventListener("click", runInference);
+captureButton.addEventListener("click", runVoteBurst);
 autoScanButton.addEventListener("click", runAutoScanLoop);
 imageUploadInput.addEventListener("change", async () => {
   const file = imageUploadInput.files && imageUploadInput.files[0];
