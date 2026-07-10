@@ -109,7 +109,18 @@
       </header>
 
       <section class="grid" aria-label="Available browser demos">
-        <a class="card" href="baseline_416_unified/">
+        <a class="card" href="../airport-batch-benchmark/">
+          <span class="tag">phone benchmark</span>
+          <h2>Airport batch benchmark</h2>
+          <p>Runs the bundled Munich airport photo set through all selected models and exports one JSON/CSV report.</p>
+          <dl>
+            <dt>Dataset</dt><dd>48 airport photos</dd>
+            <dt>Classes</dt><dd>A320, A321, A380, CRJ-900</dd>
+            <dt>Mode</dt><dd>one-click batch</dd>
+          </dl>
+        </a>
+
+        <a class="card" href="../">
           <span class="tag">trusted baseline</span>
           <h2>Unified 416 baseline</h2>
           <p>Single-pass app baseline used for the poster headline.</p>
@@ -120,7 +131,7 @@
           </dl>
         </a>
 
-        <a class="card" href="all_original_10k_scrapedval_416/">
+        <a class="card" href="../all-original-10k-416/">
           <span class="tag warn">domain-shift test</span>
           <h2>All-original 10k 416</h2>
           <p>Trained on all original FGVC images with real boxes; scraped images used only for type validation.</p>
@@ -131,7 +142,7 @@
           </dl>
         </a>
 
-        <a class="card" href="original_8k_416/">
+        <a class="card" href="../original-8k-416/">
           <span class="tag">comparison model</span>
           <h2>Original-8k 416</h2>
           <p>Original-only detector used to compare against the scraped-trained unified baseline.</p>
@@ -142,7 +153,7 @@
           </dl>
         </a>
 
-        <a class="card" href="final_phone_416_all_original/">
+        <a class="card" href="../final-phone-416/">
           <span class="tag warn">deployment candidate</span>
           <h2>Final-phone 416</h2>
           <p>All-original phone candidate; not a fair FGVC benchmark because old test images are in training.</p>
@@ -153,7 +164,7 @@
           </dl>
         </a>
 
-        <a class="card" href="final_phone_640_all_original/">
+        <a class="card" href="../final-phone-640/">
           <span class="tag warn">deployment candidate</span>
           <h2>Final-phone 640</h2>
           <p>Higher-resolution all-original phone candidate for speed/quality comparison.</p>
@@ -164,7 +175,7 @@
           </dl>
         </a>
 
-        <a class="card" href="final_phone_960_stopped_best/">
+        <a class="card" href="../final-phone-960/">
           <span class="tag warn">heavy model</span>
           <h2>Final-phone 960</h2>
           <p>Stopped-best 960 detector. Useful for comparison, but expected to be slow in-browser.</p>
@@ -175,7 +186,7 @@
           </dl>
         </a>
 
-        <a class="card" href="airport_pipeline_960_classifier_416/">
+        <a class="card" href="../airport-pipeline-960-classifier-416/">
           <span class="tag">two-stage</span>
           <h2>Tracker 960 + classifier 416</h2>
           <p>Browser pipeline: first locate the aircraft, then classify the cropped aircraft type.</p>
@@ -186,7 +197,7 @@
           </dl>
         </a>
 
-        <a class="card" href="airport_pipeline_960_416/">
+        <a class="card" href="../airport-pipeline-960-416/">
           <span class="tag">two-stage old</span>
           <h2>Tracker 960 + detector 416</h2>
           <p>Earlier two-stage browser pipeline kept for debugging and comparison.</p>

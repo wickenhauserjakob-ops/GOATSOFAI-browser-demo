@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GOATSOFAI Airport Batch Benchmark</title>
+    <link rel="stylesheet" href="style.css?v=1">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.3/dist/tf-tflite.min.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>Airport Batch Benchmark</h1>
+          <p id="status">Run the bundled Munich airport benchmark, or switch to manual upload for extra tests.</p>
+        </div>
+        <div class="actions compact">
+          <button id="runBenchmark" type="button">Run Benchmark</button>
+          <button id="stopBenchmark" type="button" disabled>Stop</button>
+        </div>
+      </header>
+
+      <section class="setup">
+        <label class="field">
+          <span>Benchmark source</span>
+          <select id="datasetMode">
+            <option value="airport">Bundled Munich airport photos</option>
+            <option value="upload">Manual upload</option>
+          </select>
+        </label>
+        <label class="field" id="groundTruthField">
+          <span>Manual-upload true type</span>
+          <select id="groundTruth"></select>
+        </label>
+        <label class="file-button" for="imageFiles" id="fileButton">
+          Select Images
+        </label>
+        <input id="imageFiles" type="file" accept="image/*" multiple>
+        <div class="field">
+          <span>Benchmark images</span>
+          <strong id="fileCount">0</strong>
+        </div>
+        <label class="field">
+          <span>Detector threshold</span>
+          <input id="detectorThreshold" type="range" min="1" max="70" value="25">
+          <strong id="thresholdText">25%</strong>
+        </label>
+      </section>
+
+      <section class="models" id="modelList" aria-label="Model selection"></section>
+
+      <section class="summary">
+        <div class="metric">
+          <span>Progress</span>
+          <strong id="progressText">-</strong>
+        </div>
+        <div class="metric">
+          <span>Best model</span>
+          <strong id="bestModel">-</strong>
+        </div>
+        <div class="metric">
+          <span>Total runtime</span>
+          <strong id="totalRuntime">-</strong>
+        </div>
+        <div class="metric">
+          <span>Device</span>
+          <strong id="deviceInfo">-</strong>
+        </div>
+      </section>
+
+      <section class="output">
+        <div class="output-head">
+          <h2>Results</h2>
+          <div class="actions">
+            <button id="copyReport" type="button" disabled>Copy JSON</button>
+            <button id="downloadJson" type="button" disabled>Download JSON</button>
+            <button id="downloadCsv" type="button" disabled>Download CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="summaryTable">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Top-1</th>
+                <th>Top-5</th>
+                <th>No det.</th>
+                <th>Avg scan</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <pre id="debug"></pre>
+      </section>
+
+      <canvas id="workCanvas"></canvas>
+      <canvas id="cropCanvas"></canvas>
+    </main>
+    <script src="app.js?v=2"></script>
+  </body>
+</html>
